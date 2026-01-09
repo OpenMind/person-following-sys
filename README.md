@@ -202,6 +202,9 @@ ros2 topic list | grep camera
 
 ##### Install and run person-following
 ```bash
+git clone <repo>
+cd person-following-system
+export PYTHONPATH=$(pwd)/src:$PYTHONPATH
 
 source /opt/ros/jazzy/setup.bash
 source ~/realsense_ws/install/setup.bash
@@ -224,7 +227,7 @@ source /opt/ros/jazzy/setup.bash
 source ~/realsense_ws/install/setup.bash
 source .venv/bin/activate
 
-python3 tracked_person_publisher_ros.py \
+python3 src/tracked_person_publisher_ros.py \
   --yolo-det ./engine/yolo11n.engine \
   --yolo-seg ./engine/yolo11s-seg.engine \
   --cmd-host 127.0.0.1 \

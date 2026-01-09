@@ -14,10 +14,11 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=all
       - ROS_DOMAIN_ID=42
       - DISPLAY=${DISPLAY:-:0}
+      - PYTHONPATH=/opt/person_following/src
       
     volumes:
       # USB devices for RealSense camera
       - /dev:/dev
       
-    command: bash /opt/person_following/start_person_following.sh
+    command: bash /opt/person_following/src/start_person_following.sh
     
