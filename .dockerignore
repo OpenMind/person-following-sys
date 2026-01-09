@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+README*.md
+docs/
+*.txt
+
+# Test files
+test_*.py
+*_test.py
+
+# Logs
+*.log
+logs/
+
+# Data
+*.mp4
+*.avi
+*.jpg
+*.jpeg
+*.png
+*.gif
+
+# Models (will be mounted as volumes)
+*.engine
+*.onnx
+*.pt
+*.pth
+
+# ROS
+log/
+install/
+build/
+
+# OS
+.DS_Store
+Thumbs.db

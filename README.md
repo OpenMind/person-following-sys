@@ -6,46 +6,249 @@ A real-time person following system using visual tracking and re-identification 
 
 This project enables a robot to track and follow a specific person using a RealSense depth camera. The system enrolls a target person and continuously tracks them, with the ability to re-identify the target if they are temporarily lost.
 
-## Project Structure
+
+### Features
+Two-Stage Matching
+
+Stage 1: Lab color histogram matching (fast, lighting-robust)
+Stage 2: OpenCLIP embedding verification (semantic, cross-view robust)
+
+
+1. Distance-Bucketed Feature Storage - Features stored at 0.5m intervals with direction awareness
+2. Robust Re-identification - Handles occlusions, viewpoint changes, and temporary loss
+3. ROS 2 Integration - Publishes tracking status for robot control
+4. HTTP Control API - Remote enrollment and management via REST endpoints
+
+
+### Experiment Setup
+
+Thor Device w/ Jetpack 7 + CUDA
+
+### Core Project Structure
 
 | File | Description |
 |------|-------------|
 | `main.py` | Main entry point for running the person following system with visualization |
 | `person_following_system.py` | Core system that coordinates detection, tracking, and re-identification |
 | `target_state.py` | Manages the tracked target's state and stored appearance features |
-| `clothing_matcher_lab_openclip.py` | Extracts and matches clothing appearance using color and visual features |
+| `clothing_matcher_lab_openclip.py` | Extracts and matches clothing appearance using color and semantic visual features |
 | `yolo_detector.py` | Detects people in camera frames using YOLO |
-| `tracked_person_publisher.py` | ROS 2 node that publishes tracked person position for robot navigation |
+| `tracked_person_publisher_ros.py` | Realsense-ROS node that publishes tracked person position for robot navigation |
+| `person_following_command.py` | Manage and set up HTTP endpoint to send (enroll/clear/quit/status) command to control the system|
 
-## Usage
-
-### Basic Usage
-
-### ROS 2 Integration
-
+### System Architecture
 ```bash
-python tracked_person_publisher.py --yolo-det yolo11n.engine --yolo-seg yolo11s-seg.engine
-```
-In another terminal run
-```bash
-ros2 topic echo /tracked_person/pose
-```
-
-If ROS Jazzy not installed
-
-```bash
-python main.py --yolo-det yolo11n.engine --yolo-seg yolo11s-seg.engine
-```
-
-### Run Without Display
-
-```bash
-python main.py --yolo-det yolo11n.engine --yolo-seg yolo11s-seg.engine --no-display
+RealSense D435i → ROS 2 Camera Node → Person Following System
+                                            ↓
+                                    YOLO11 Detection
+                                            ↓
+                                    BoTSORT Tracking
+                                            ↓
+                        ┌───────────────────┴────────────────────┐
+                        ↓                                        ↓
+              TRACKING_ACTIVE                              SEARCHING
+                        ↓                                        ↓
+            Feature Extraction                      Re-identification
+         (Lab + OpenCLIP @ 0.5m buckets)        (Two-stage matching)
+                        ↓                                        ↓
+                    ROS Topic                               ROS Topic
+              /tracked_person/status                /tracked_person/status
 ```
 
+### Installation & Running
 
-## Controls
+#### Option 1: Docker (EASIEST)
+##### Pull Pre-built Image with Docker Compose
+1. **Pull the image**
+```bash
+docker pull openmindagi/person-following:v0.1.0
+```
 
+3. **Start with Docker Compose**
+```bash
+docker compose up
+```
+
+##### Pull Pre-built Image with Docker Compose
+```bash
+git clone <repo>
+cd person-following-system
+docker build -t person-following:latest .
+
+docker run \
+  --rm \
+  --runtime=nvidia \
+  --privileged \
+  --network=host \
+  -v $(pwd)/engine:/opt/person_following/engine \ (optional)
+  -v /dev:/dev \
+  person-following:latest \
+  bash /opt/person_following/start_person_following.sh
+```
+
+### Option 2: Local Installation
+
+##### Build librealsense from Source
+```bash
+# System prerequisites
+sudo apt update
+sudo apt install -y software-properties-common
+sudo add-apt-repository -y universe
+sudo apt update
+
+# Install core build + Python tools
+sudo apt install -y \
+  git cmake build-essential pkg-config ninja-build \
+  python3-pip python3-venv python3-dev \
+  curl ca-certificates gnupg lsb-release
+
+# Install ROS 2 Jazzy (Ubuntu 24.04)
+sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+  -o /usr/share/keyrings/ros-archive-keyring.gpg
+
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | \
+sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+
+sudo apt update
+sudo apt install -y \
+  ros-jazzy-ros-base \
+  python3-rosdep \
+  python3-colcon-common-extensions \
+  python3-vcstool
+
+# Initialize rosdep
+sudo rosdep init || true
+rosdep update
+
+# Source ROS
+source /opt/ros/jazzy/setup.bash
+
+# Build librealsense from source (recommended on Ubuntu 24.04)
+# Install librealsense build dependencies
+sudo apt install -y \
+  libssl-dev libusb-1.0-0-dev libudev-dev \
+  libgtk-3-dev libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev
+
+# Clone + udev rules
+cd ~
+git clone https://github.com/IntelRealSense/librealsense.git
+cd librealsense
+git checkout v2.57.5
+sudo ./scripts/setup_udev_rules.sh
+sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# (Optional but helpful)
+sudo usermod -aG plugdev $USER
+sudo usermod -aG video $USER
+
+# Build
+# If you do NOT need pyrealsense2 (ROS topics only), use BUILD_PYTHON_BINDINGS=OFF:
+mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_WITH_CUDA=ON \
+  -DBUILD_PYTHON_BINDINGS=OFF \
+  -DFORCE_RSUSB_BACKEND=ON \
+  -DBUILD_EXAMPLES=OFF \
+  -DBUILD_GRAPHICAL_EXAMPLES=OFF
+
+cmake --build . -j"$(nproc)"
+sudo cmake --install .
+sudo ldconfig
+
+# Verify installed
+pkg-config --modversion realsense2
+
+# Verify device visibility
+rs-enumerate-devices
+realsense-viewer # on GUI supported env
+
+# Build realsense-ros (ROS 2 wrapper) from source
+# Intel’s ROS wrapper instructions recommend building from source.
+mkdir -p ~/realsense_ws/src
+cd ~/realsense_ws/src
+git clone https://github.com/IntelRealSense/realsense-ros.git -b ros2-master
+
+# Install dependencies via rosdep
+cd ~/realsense_ws
+source /opt/ros/jazzy/setup.bash
+rosdep install --from-paths src --ignore-src -r -y \
+  --rosdistro jazzy \
+  --skip-keys=librealsense2
+
+# Build
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+
+# Source workspace
+echo "source ~/realsense_ws/install/setup.bash" >> ~/.bashrc # Optional
+source ~/realsense_ws/install/setup.bash
+
+# Launch RealSense ROS node and confirm topics
+source /opt/ros/jazzy/setup.bash
+source ~/realsense_ws/install/setup.bash
+
+ros2 launch realsense2_camera rs_launch.py \
+  enable_color:=true \
+  enable_depth:=true \
+  align_depth.enable:=true \
+  enable_gyro:=false \
+  enable_accel:=false
+
+# In another terminal
+source /opt/ros/jazzy/setup.bash
+ros2 topic list | grep camera
+```
+
+
+##### Install and run person-following
+```bash
+
+source /opt/ros/jazzy/setup.bash
+source ~/realsense_ws/install/setup.bash
+ros2 launch realsense2_camera rs_launch.py \
+  enable_color:=true \
+  enable_depth:=true \
+  align_depth.enable:=true \
+  enable_gyro:=false \
+  enable_accel:=false
+
+cd /path/to/person-following-sys
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip setuptools wheel
+pip install pycuda open-clip-torch boxmot onnx onnxruntime ultralytics
+pip install "numpy==1.26.4" # need to be <2 to make it work
+
+
+source /opt/ros/jazzy/setup.bash
+source ~/realsense_ws/install/setup.bash
+source .venv/bin/activate
+
+python3 tracked_person_publisher_ros.py \
+  --yolo-det ./engine/yolo11n.engine \
+  --yolo-seg ./engine/yolo11s-seg.engine \
+  --cmd-host 127.0.0.1 \
+  --cmd-port 8080 \
+  --display (optional)
+
+# Echo status
+ros2 topic echo /tracked_person/status
+
+```
+
+
+##### Controls
+# Endpoint HTTP Control
+```bash
+  curl -X POST http://127.0.0.1:8080/enroll
+  curl -X POST http://127.0.0.1:8080/command -H 'Content-Type: application/json' -d '{"cmd":"enroll"}'
+  curl -X POST http://127.0.0.1:8080/clear
+  curl http://127.0.0.1:8080/status
+  curl -X POST http://127.0.0.1:8080/quit
+```
+
+
+##### Keyboard on camera preview 
 | Key | Action |
 |-----|--------|
 | `e` | Enroll the closest person as target (Nearest will auto enroll otherwise set --no-auto-enroll)|
@@ -53,150 +256,81 @@ python main.py --yolo-det yolo11n.engine --yolo-seg yolo11s-seg.engine --no-disp
 | `s` | Print system status |
 | `q` | Quit |
 
-## Installation
 
-```bash
-pip install boxmot
-pip install open-clip-torch
-pip install pyrealsense2
-pip install opencv-python numpy
-```
+#### System States
 
-For ROS 2 integration:
-```bash
-pip install rclpy
-```
+##### INACTIVE
+- No target enrolled
+- Detection and tracking active, but no person following
+- Waiting for enrollment command (You can also set with auto enroll with nearest person with --auto-enroll)
 
-## Requirements
+##### TRACKING_ACTIVE
+- Target locked and tracked by ID
+- Distance-based feature storage (0.5m buckets)
+- Movement direction detection (approaching/leaving)
+- Automatic feature extraction at key distances
 
-- Intel RealSense camera (D400 series)
-- TensorRT engine files for YOLO detection and segmentation
-- CUDA-capable GPU
+##### SEARCHING
+- Target lost (occluded, left frame, or track dropped)
+- Re-identification via two-stage matching:
+  1. Lab color histogram matching (fast filter)
+  2. OpenCLIP embedding verification (semantic confirmation)
+- Throttled feature extraction (~3 fps by default)
+- Searches all visible persons for best match
 
-## Install librealsense + pyrealsense2
-1) Install build dependencies
-```bash
-sudo apt update
-sudo apt install -y \
-  git cmake build-essential pkg-config \
-  libusb-1.0-0-dev libudev-dev libssl-dev \
-  python3-dev python3-pip \
-  libgtk-3-dev libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev
-```
+##### Feature Storage Strategy
 
-2) Clone librealsense and install udev rules (permissions)
-```bash
-cd ~
-git clone https://github.com/realsenseai/librealsense.git
-cd librealsense
-sudo ./scripts/setup_udev_rules.sh
-sudo udevadm control --reload-rules && sudo udevadm trigger
-```
-add your user to common device groups:
-```bash
-sudo usermod -aG plugdev $USER
-sudo usermod -aG video $USER
-```
+##### Distance Buckets
+- Features stored at **0.5m intervals** relative to enrollment distance
+- Example: Enrolled at 3.0m → buckets at 2.5m, 3.0m, 3.5m, 4.0m, etc.
 
-3) Build and install librealsense + pyrealsense2
-```bash
-cd ~/librealsense
-git fetch --all --tags
-# Choose a stable tag (example):
-git checkout v2.57.4
+##### Direction Awareness
+- **Approaching**: Target moving closer to camera
+- **Leaving**: Target moving away from camera
+- Separate features for each direction (handles different views)
 
-mkdir -p build && cd build
+##### Quality Thresholds
+- **Saving**: Minimum 35% mask coverage
+- **Matching**: Minimum 30% mask coverage
+- Frame margin: 20px from left/right edges
 
-cmake .. \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DFORCE_RSUSB_BACKEND=ON \
-  -DBUILD_EXAMPLES=ON \
-  -DBUILD_GRAPHICAL_EXAMPLES=ON \
-  -DBUILD_PYTHON_BINDINGS=ON \
-  -DPYTHON_EXECUTABLE=$(which python3)
+##### Matching Process
 
-make -j$(nproc)
-sudo make install
-sudo ldconfig
-```
+##### Active Tracking
+1. Locate target by tracker ID
+2. Detect movement direction (speed > 0.4 m/s)
+3. Check if new bucket should be saved
+4. Extract features if conditions met:
+   - New bucket not yet populated
+   - Within frame margins
+   - Time since last save > 0.3s
+5. Continue tracking
 
-4) Verify librealsense tools
-You should now have tools in /usr/local/bin.
-```bash
-/usr/local/bin/rs-enumerate-devices
-```
-5) Verify pyrealsense2 import
-```bash
-python3 -c "import pyrealsense2 as rs; print('pyrealsense2 OK:', rs.__file__)"
-```
+##### Re-identification (Searching)
+1. **Stage 1: Clothing Filter**
+   - Extract Lab histograms from all candidates
+   - Compute similarity vs. stored features
+   - Keep candidates with similarity ≥ threshold (default 0.8)
 
-6) Using pyrealsense2 inside a Python venv
-```bash
-cd ~/your-project
-python3 -m venv .venv --system-site-packages
-source .venv/bin/activate
-```
+2. **Stage 2: CLIP Verification**
+   - Extract OpenCLIP embeddings
+   - Compute cosine similarity
+   - Verify candidates with similarity ≥ threshold (default 0.8)
 
-### Install Torch and Tensorrt
-```bash
-pip uninstall -y torch torchvision torchaudio
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+3. **Selection**
+   - Choose candidate with highest CLIP similarity
+   - Resume tracking with new track ID
 
-python - <<'PY'
-import torch
-print("torch:", torch.__version__)
-print("cuda available:", torch.cuda.is_available())
-print("cuda devices:", torch.cuda.device_count())
-if torch.cuda.is_available():
-    print("GPU:", torch.cuda.get_device_name(0))
-PY
-```
 
-### If .engine not working build again
-1) YOLO detection
-```bash
-pip install ultralytics onnx
-yolo export model=yolo11n.pt format=onnx device=cpu
-yolo export model=yolo11n.pt format=onnx device=0
-/usr/src/tensorrt/bin/trtexec \
-  --onnx=yolo11n.onnx \
-  --saveEngine=yolo11n_fp16.engine \
-  --fp16
-```
 
-2) YOLO Segmentation
-```bash
-yolo export model=yolo11s-seg.pt format=onnx imgsz=640
-yolo export model=yolo11s-seg.pt format=engine device=0 half=True imgsz=640
-```
 
-3) Convert Ultralytics .engine → raw TensorRT engine (*.raw.engine)
-```bash
+## Acknowledgments
 
-Ultralytics writes extra metadata into the beginning of the .engine file (a small header + JSON). Native TensorRT loaders (tensorrt.Runtime.deserialize_cuda_engine) expect the file to start with a TensorRT plan header, so they fail with magicTag / serialization errors. Converting to *.raw.engine strips the Ultralytics metadata, leaving a standard TensorRT engine that TensorRT can deserialize normally.
+- [YOLO](https://github.com/ultralytics/ultralytics) - Object detection
+- [BoxMOT](https://github.com/mikel-brostrom/boxmot) - Multi-object tracking
+- [OpenCLIP](https://github.com/mlfoundations/open_clip) - Vision-language embeddings
+- [Intel RealSense](https://github.com/IntelRealSense/librealsense) - Depth camera SDK
+- [ROS 2](https://docs.ros.org/en/jazzy/) - Robot Operating System
 
-python - <<'PY'
-import json
 
-src="yolo11s-seg.engine"
-dst="yolo11s-seg.raw.engine"
 
-data=open(src,"rb").read()
-if len(data) < 4:
-    raise SystemExit("Engine file too small")
-
-meta_len = int.from_bytes(data[:4], "little", signed=True)
-
-# Ultralytics format: [int32 meta_len][meta_json_bytes][tensorrt_engine_bytes]
-if 0 < meta_len < 1_000_000 and 4 + meta_len < len(data):
-    meta_blob = data[4:4+meta_len]
-    # validate it really is JSON metadata
-    json.loads(meta_blob.decode("utf-8"))
-    engine_bytes = data[4+meta_len:]
-    open(dst, "wb").write(engine_bytes)
-    print(f"OK: wrote {dst}, bytes={len(engine_bytes)} (stripped Ultralytics metadata {meta_len} bytes)")
-else:
-    raise SystemExit("Did not detect Ultralytics metadata header. Nothing written.")
-PY
-
-```

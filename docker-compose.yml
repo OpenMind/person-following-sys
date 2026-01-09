@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  person-following:
+    image: openmindagi/person-following:v0.1.0
+    container_name: person-following-system
+    runtime: nvidia
+    privileged: true  # Required for RealSense USB access
+    network_mode: host  # Required for ROS communication
+    restart: no
+    
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - ROS_DOMAIN_ID=42
+      - DISPLAY=${DISPLAY:-:0}
+      
+    volumes:
+      # USB devices for RealSense camera
+      - /dev:/dev
+      
+    command: bash /opt/person_following/start_person_following.sh
+    
