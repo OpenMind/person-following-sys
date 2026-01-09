@@ -69,7 +69,7 @@ docker pull openmindagi/person-following:v0.1.0
 docker compose up
 ```
 
-##### Pull Pre-built Image with Docker Compose
+##### Build your own docker image
 ```bash
 git clone <repo>
 cd person-following-system
@@ -237,8 +237,8 @@ ros2 topic echo /tracked_person/status
 ```
 
 
-##### Controls
-# Endpoint HTTP Control
+## Controls
+##### Endpoint HTTP Control
 ```bash
   curl -X POST http://127.0.0.1:8080/enroll
   curl -X POST http://127.0.0.1:8080/command -H 'Content-Type: application/json' -d '{"cmd":"enroll"}'
@@ -257,7 +257,7 @@ ros2 topic echo /tracked_person/status
 | `q` | Quit |
 
 
-#### System States
+## System States
 
 ##### INACTIVE
 - No target enrolled
