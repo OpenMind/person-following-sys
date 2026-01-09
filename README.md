@@ -69,7 +69,7 @@ docker pull openmindagi/person-following:v0.1.0
 docker compose up
 ```
 
-##### Build your own docker image
+##### OR Build your own docker image
 ```bash
 git clone <repo>
 cd person-following-system
