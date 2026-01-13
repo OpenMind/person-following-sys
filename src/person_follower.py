@@ -1,13 +1,60 @@
 #!/usr/bin/env python3
+"""ROS2 node for following a tracked person using PD control.
+
+This module implements a person-following robot controller that subscribes
+to tracked person positions and publishes velocity commands to follow them
+while maintaining a target distance.
+"""
+
+import math
+
 import rclpy
-from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped, Twist
 from rclpy.logging import LoggingSeverity
-import math
+from rclpy.node import Node
 
 
 class PersonFollower(Node):
+    """
+    ROS2 node that follows a tracked person using PD control.
+
+    This class implements a person-following controller that:
+        * Subscribes to tracked person position updates
+        * Computes velocity commands using proportional-derivative (PD) control
+        * Uses a "rotate first, then move" behavior for smooth following
+        * Includes safety timeout to stop the robot when tracking is lost
+
+    Parameters
+    ----------
+    target_distance : float, optional
+        Desired distance to maintain from the person in meters. Default is 1.0.
+    max_linear_speed : float, optional
+        Maximum linear velocity in m/s. Default is 0.8.
+    max_angular_speed : float, optional
+        Maximum angular velocity in rad/s. Default is 1.8.
+    linear_kp : float, optional
+        Proportional gain for linear control. Default is 0.8.
+    linear_kd : float, optional
+        Derivative gain for linear control. Default is 0.05.
+    angular_kp : float, optional
+        Proportional gain for angular control. Default is 1.5.
+    angular_kd : float, optional
+        Derivative gain for angular control. Default is 0.1.
+    distance_tolerance : float, optional
+        Distance error threshold for stopping in meters. Default is 0.2.
+    angle_tolerance : float, optional
+        Angle error threshold for rotation priority in radians. Default is 0.35.
+    timeout : float, optional
+        Time without updates before stopping the robot in seconds. Default is 2.0.
+    """
     def __init__(self):
+        """
+        Initialize the PersonFollower node.
+
+        Sets up ROS2 subscriptions, publishers, parameters, and timers.
+        Configures PD control parameters with default values that can be
+        overridden via ROS2 parameter system.
+        """
         super().__init__('person_follower')
         
         # Subscribe to tracked person position
@@ -61,7 +108,18 @@ class PersonFollower(Node):
         self.get_logger().info('Person follower started with PD Control')
 
     def position_callback(self, msg):
-        """Callback for tracked person position"""
+        """
+        Handle incoming tracked person position updates.
+
+        Processes the position message, calculates the time delta since
+        the last update, computes velocity commands, and publishes them.
+
+        Parameters
+        ----------
+        msg : PoseStamped
+            The tracked person's position in robot-centric coordinates
+            where x is lateral offset and z is forward distance.
+        """
         if msg.pose.position.z == 0.0:
             return
 
@@ -78,7 +136,25 @@ class PersonFollower(Node):
         self.cmd_vel_publisher.publish(cmd_vel)
     
     def calculate_velocity(self, pose_msg, dt):
-        """Calculate velocity commands using PD control"""
+        """
+        Calculate velocity commands using PD control.
+
+        Computes linear and angular velocities based on the distance and
+        angle to the tracked person. Uses a "rotate first, then move"
+        behavior to prioritize alignment before forward motion.
+
+        Parameters
+        ----------
+        pose_msg : PoseStamped
+            The tracked person's position.
+        dt : float
+            Time delta since last update in seconds.
+
+        Returns
+        -------
+        Twist
+            Velocity command with linear.x and angular.z populated.
+        """
         cmd = Twist()
         
         x = pose_msg.pose.position.x
@@ -140,7 +216,13 @@ class PersonFollower(Node):
         return cmd
     
     def safety_check(self):
-        """Stop robot if no updates received recently"""
+        """
+        Perform periodic safety check and stop robot if tracking is lost.
+
+        Called by a timer to ensure the robot stops if no person position
+        updates have been received within the configured timeout period.
+        This prevents the robot from continuing to move when tracking fails.
+        """
         if self.last_msg_time is None:
             return
         
@@ -156,6 +238,17 @@ class PersonFollower(Node):
 
 
 def main(args=None):
+    """
+    Entry point for the person follower node.
+
+    Initializes ROS2, creates the PersonFollower node, and spins until
+    shutdown. Ensures the robot is stopped on exit.
+
+    Parameters
+    ----------
+    args : list, optional
+        Command-line arguments passed to rclpy.init(). Default is None.
+    """
     rclpy.logging._root_logger.log(
         'Starting person follower node...',
         LoggingSeverity.INFO
