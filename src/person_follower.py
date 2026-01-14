@@ -71,11 +71,11 @@ class PersonFollower(Node):
 
         # Control parameters
         self.declare_parameter("target_distance", 1.0)
-        self.declare_parameter("max_linear_speed", 0.8)
-        self.declare_parameter("max_angular_speed", 1.8)
-        self.declare_parameter("linear_kp", 0.8)
+        self.declare_parameter("max_linear_speed", 0.7)
+        self.declare_parameter("max_angular_speed", 1.6)
+        self.declare_parameter("linear_kp", 0.6)
         self.declare_parameter("linear_kd", 0.05)
-        self.declare_parameter("angular_kp", 1.5)
+        self.declare_parameter("angular_kp", 1.4)
         self.declare_parameter("angular_kd", 0.1)
         self.declare_parameter("distance_tolerance", 0.2)
         self.declare_parameter("angle_tolerance", 0.35)
@@ -98,6 +98,8 @@ class PersonFollower(Node):
         self.last_msg_time = None
         self.last_distance_error = 0.0
         self.last_angle_error = 0.0
+        self.stop_sent = False  
+        self.is_tracking = False  
 
         # Safety timer
         self.safety_timer = self.create_timer(0.1, self.safety_check)
@@ -121,6 +123,8 @@ class PersonFollower(Node):
             return
 
         self.last_position = msg
+        self.stop_sent = False  
+        self.is_tracking = True
 
         current_time = self.get_clock().now()
         dt = 0.0
@@ -226,7 +230,8 @@ class PersonFollower(Node):
 
         Called by a timer to ensure the robot stops if no person position
         updates have been received within the configured timeout period.
-        This prevents the robot from continuing to move when tracking fails.
+        Sends stop command only once, then yields control to allow external
+        velocity commands.
         """
         if self.last_msg_time is None:
             return
@@ -236,12 +241,14 @@ class PersonFollower(Node):
         ).nanoseconds / 1e9
 
         if time_since_update > self.timeout:
-            stop_cmd = Twist()
-            self.cmd_vel_publisher.publish(stop_cmd)
-            self.get_logger().warn(
-                f"No person detected for {time_since_update:.1f}s - stopping robot",
-                throttle_duration_sec=2.0,
-            )
+            if not self.stop_sent:
+                stop_cmd = Twist()
+                self.cmd_vel_publisher.publish(stop_cmd)
+                self.stop_sent = True
+                self.is_tracking = False
+                self.get_logger().warn(
+                    f"No person detected for {time_since_update:.1f}s - stopping robot"
+                )
 
 
 def main(args=None):

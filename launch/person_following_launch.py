@@ -63,7 +63,7 @@ def generate_launch_description():
 
     auto_enroll_arg = DeclareLaunchArgument(
         "auto_enroll",
-        default_value="true",
+        default_value="false",
         description="Enable auto-enrollment (true/false)",
     )
 
@@ -75,11 +75,12 @@ def generate_launch_description():
 
     # Build command arguments conditionally
     def build_tracker_cmd(context):
-        """Build the tracker command with conditional --display flag."""
+        """Build the tracker command with conditional flags."""
         import os as _os
 
         _project_root = _os.environ.get("PROJECT_ROOT", "/opt/person_following")
         display_val = context.launch_configurations.get("display", "false")
+        auto_enroll_val = context.launch_configurations.get("auto_enroll", "false")
 
         cmd = [
             "python3",
@@ -94,8 +95,10 @@ def generate_launch_description():
             context.launch_configurations["depth_topic"],
             "--camera-info-topic",
             context.launch_configurations["camera_info_topic"],
-            "--auto-enroll",
         ]
+
+        if auto_enroll_val.lower() == "true":
+            cmd.append("--auto-enroll")
 
         if display_val.lower() == "true":
             cmd.append("--display")
