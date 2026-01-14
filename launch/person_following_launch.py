@@ -15,13 +15,18 @@ Camera topics are received from an external container via ROS.
 import os
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, OpaqueFunction, TimerAction
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    LogInfo,
+    OpaqueFunction,
+    TimerAction,
+)
 from launch.substitutions import LaunchConfiguration
 
 
 def generate_launch_description():
     """Generate the launch description for person following system."""
-
     # Get project root from environment or use default
     project_root = os.environ.get("PROJECT_ROOT", "/opt/person_following")
 
@@ -72,33 +77,41 @@ def generate_launch_description():
     def build_tracker_cmd(context):
         """Build the tracker command with conditional --display flag."""
         import os as _os
+
         _project_root = _os.environ.get("PROJECT_ROOT", "/opt/person_following")
-        display_val = context.launch_configurations.get('display', 'false')
-        
+        display_val = context.launch_configurations.get("display", "false")
+
         cmd = [
             "python3",
             _os.path.join(_project_root, "src/tracked_person_publisher_ros.py"),
-            "--yolo-det", context.launch_configurations['yolo_det'],
-            "--yolo-seg", context.launch_configurations['yolo_seg'],
-            "--color-topic", context.launch_configurations['color_topic'],
-            "--depth-topic", context.launch_configurations['depth_topic'],
-            "--camera-info-topic", context.launch_configurations['camera_info_topic'],
+            "--yolo-det",
+            context.launch_configurations["yolo_det"],
+            "--yolo-seg",
+            context.launch_configurations["yolo_seg"],
+            "--color-topic",
+            context.launch_configurations["color_topic"],
+            "--depth-topic",
+            context.launch_configurations["depth_topic"],
+            "--camera-info-topic",
+            context.launch_configurations["camera_info_topic"],
             "--auto-enroll",
         ]
-        
-        if display_val.lower() == 'true':
+
+        if display_val.lower() == "true":
             cmd.append("--display")
-        
+
         return cmd
 
     # Tracked person publisher - runs as a standalone Python script
     def launch_tracker(context):
         cmd = build_tracker_cmd(context)
-        return [ExecuteProcess(
-            cmd=cmd,
-            name="tracked_person_publisher",
-            output="screen",
-        )]
+        return [
+            ExecuteProcess(
+                cmd=cmd,
+                name="tracked_person_publisher",
+                output="screen",
+            )
+        ]
 
     tracked_person_publisher_cmd = OpaqueFunction(function=launch_tracker)
 
@@ -131,7 +144,9 @@ def generate_launch_description():
             # Log info
             LogInfo(msg="Starting Person Following System..."),
             LogInfo(msg=["YOLO Detection Engine: ", LaunchConfiguration("yolo_det")]),
-            LogInfo(msg=["YOLO Segmentation Engine: ", LaunchConfiguration("yolo_seg")]),
+            LogInfo(
+                msg=["YOLO Segmentation Engine: ", LaunchConfiguration("yolo_seg")]
+            ),
             LogInfo(msg=["Color Topic: ", LaunchConfiguration("color_topic")]),
             LogInfo(msg=["Depth Topic: ", LaunchConfiguration("depth_topic")]),
             # Processes
